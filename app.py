@@ -277,20 +277,20 @@ def assignment_new(course_id):
         title=request.form.get("title","").strip();instructions=request.form.get("instructions","").strip()
         start=dt(request.form.get("start_at",""));deadline=dt(request.form.get("deadline",""))
         publish=request.form.get("action")=="publish";allow=request.form.get("allow_edit")=="on"
-        if not title or not instructions or not start or not deadline or deadline<=start:flash("Enter valid assignment details and a deadline after the start.","error");return render_template("assignment_builder.html",course=c)
+        if not title or not instructions or not start or not deadline or deadline<=start:flash("Enter valid assignment details and a deadline after the start.","error");return render_template("assignment_builder.html",course=c,builder_state=builder_state_from_request())
         a=Assignment(course_id=c.id,tutor_id=current_user.id,title=title,instructions=instructions,start_at=start,deadline=deadline,allow_edit=allow,status="published" if publish else "draft")
         db.session.add(a);db.session.flush()
         ids=sorted({int(m.group(1)) for k in request.form if (m:=re.match(r"q_type_(\d+)$",k))})
-        if not ids:db.session.rollback();flash("Add at least one question.","error");return render_template("assignment_builder.html",course=c)
+        if not ids:db.session.rollback();flash("Add at least one question.","error");return render_template("assignment_builder.html",course=c,builder_state=builder_state_from_request())
         for order,i in enumerate(ids):
             typ=request.form.get(f"q_type_{i}");prompt=request.form.get(f"q_prompt_{i}","").strip()
             try:marks=float(request.form.get(f"q_marks_{i}","1"))
             except:marks=1
-            if typ not in ("mcq","theory","file") or not prompt or marks<=0:db.session.rollback();flash("Every question needs a type, prompt and positive marks.","error");return render_template("assignment_builder.html",course=c)
+            if typ not in ("mcq","theory","file") or not prompt or marks<=0:db.session.rollback();flash("Every question needs a type, prompt and positive marks.","error");return render_template("assignment_builder.html",course=c,builder_state=builder_state_from_request())
             q=Question(assignment_id=a.id,type=typ,prompt=prompt,marks=marks,order_index=order);db.session.add(q);db.session.flush()
             if typ=="mcq":
                 opts=[x.strip() for x in request.form.getlist(f"q_option_{i}") if x.strip()];correct=request.form.get(f"q_correct_{i}")
-                if len(opts)<2 or correct not in {str(x) for x in range(len(request.form.getlist(f"q_option_{i}")))}:db.session.rollback();flash("Each MCQ needs at least two options and one correct answer.","error");return render_template("assignment_builder.html",course=c)
+                if len(opts)<2 or correct not in {str(x) for x in range(len(request.form.getlist(f"q_option_{i}")))}:db.session.rollback();flash("Each MCQ needs at least two options and one correct answer.","error");return render_template("assignment_builder.html",course=c,builder_state=builder_state_from_request())
                 for n,opt in enumerate(opts):db.session.add(QuestionOption(question_id=q.id,text=opt,is_correct=str(n)==correct))
             elif typ=="file":
                 q.support_file=upload(request.files.get(f"q_file_{i}"),f"assignment-{a.id}")
@@ -300,6 +300,15 @@ def assignment_new(course_id):
             db.session.commit()
         return redirect(url_for("assignment",assignment_id=a.id))
     return render_template("assignment_builder.html",course=c)
+
+def builder_state_from_request():
+    ids=sorted({int(m.group(1)) for k in request.form if (m:=re.match(r"q_type_(\\d+)$",k))})
+    questions=[]
+    for i in ids:
+        opts=request.form.getlist(f"q_option_{i}")
+        correct=request.form.get(f"q_correct_{i}")
+        questions.append({"type":request.form.get(f"q_type_{i}","mcq"),"marks":request.form.get(f"q_marks_{i}","5"),"prompt":request.form.get(f"q_prompt_{i}",""),"options":[{"text":v,"correct":str(n)==correct} for n,v in enumerate(opts)]})
+    return {"title":request.form.get("title",""),"instructions":request.form.get("instructions",""),"start_at":request.form.get("start_at",""),"deadline":request.form.get("deadline",""),"allow_edit":request.form.get("allow_edit")=="on","launch_now":request.form.get("launch_now")=="on","questions":questions}
 
 def get_submission(a,uid):
     s=Submission.query.filter_by(assignment_id=a.id,student_id=uid).first()
