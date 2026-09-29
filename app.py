@@ -1,9 +1,9 @@
-import os, re, secrets
+import os, re, secrets, hmac
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -126,8 +126,15 @@ def load(uid): return db.session.get(User,int(uid))
 
 @app.context_processor
 def globals():
+    if "csrf_token" not in session: session["csrf_token"]=secrets.token_hex(32)
     unread=Notification.query.filter_by(user_id=current_user.id,is_read=False).count() if current_user.is_authenticated else 0
-    return {"unread_notifications":unread,"now":utc()}
+    return {"unread_notifications":unread,"now":utc(),"csrf_token":session["csrf_token"]}
+
+@app.before_request
+def protect_posts():
+    if request.method=="POST":
+        expected=session.get("csrf_token"); supplied=request.form.get("_csrf") or request.headers.get("X-CSRF-Token")
+        if not expected or not supplied or not hmac.compare_digest(expected,supplied): abort(400, description="Invalid CSRF token")
 
 @app.before_request
 def init():
