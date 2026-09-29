@@ -371,11 +371,16 @@ def publish(assignment_id):
 def release(assignment_id):
     a=db.session.get(Assignment,assignment_id)
     if not a or a.tutor_id!=current_user.id:abort(403)
-    a.results_released=True
     for s in a.submissions:
         if s.submitted_at and s.marked_at is None:
-            flash("Mark every submitted student before releasing results.","error");return redirect(url_for("assignment",assignment_id=a.id))notify(s.student_id,"Result released",f"Your result for {a.title} is ready.",url_for("result",submission_id=s.id),"result")
-    db.session.commit();return redirect(url_for("assignment",assignment_id=a.id))
+            flash("Mark every submitted student before releasing results.","error")
+            return redirect(url_for("assignment",assignment_id=a.id))
+    a.results_released=True
+    for s in a.submissions:
+        if s.submitted_at:
+            notify(s.student_id,"Result released",f"Your result for {a.title} is ready.",url_for("result",submission_id=s.id),"result")
+    db.session.commit()
+    return redirect(url_for("assignment",assignment_id=a.id))
 
 @app.route("/assignment/<int:assignment_id>/mark/<int:student_id>")
 @login_required
