@@ -311,7 +311,8 @@ def assignment(assignment_id):
         if a.tutor_id!=current_user.id:abort(403)
         return render_template("assignment.html",assignment=a,tutor_view=True)
     if a.status!="published" or not enrolled(a.course_id,current_user.id):abort(403)
-    s=get_submission(a,current_user.id);return render_template("assignment.html",assignment=a,tutor_view=False,submission=s)
+    s=get_submission(a,current_user.id)
+    return render_template("assignment.html",assignment=a,tutor_view=False,submission=s,available=(a.start_at<=utc()<=a.deadline))
 
 def save_answers(a,s):
     for q in a.questions:
@@ -345,6 +346,7 @@ def submit(assignment_id):
     save_answers(a,s);s.submitted_at=utc()
     for ans in s.answers:
         if ans.question.type=="mcq":ans.awarded_mark=ans.question.marks if ans.selected_option and ans.selected_option.is_correct else 0
+    if all(x.question.type=="mcq" for x in s.answers): s.marked_at=utc()
     notify(a.tutor_id,"Assignment submitted",f"{current_user.full_name} submitted {a.title}.",url_for("mark",assignment_id=a.id,student_id=current_user.id),"submission")
     db.session.commit();flash("Assignment submitted.","success");return redirect(url_for("assignment",assignment_id=a.id))
 
@@ -363,7 +365,9 @@ def release(assignment_id):
     a=db.session.get(Assignment,assignment_id)
     if not a or a.tutor_id!=current_user.id:abort(403)
     a.results_released=True
-    for s in a.submissions:notify(s.student_id,"Result released",f"Your result for {a.title} is ready.",url_for("result",submission_id=s.id),"result")
+    for s in a.submissions:
+        if s.submitted_at and s.marked_at is None:
+            flash("Mark every submitted student before releasing results.","error");return redirect(url_for("assignment",assignment_id=a.id))notify(s.student_id,"Result released",f"Your result for {a.title} is ready.",url_for("result",submission_id=s.id),"result")
     db.session.commit();return redirect(url_for("assignment",assignment_id=a.id))
 
 @app.route("/assignment/<int:assignment_id>/mark/<int:student_id>")
