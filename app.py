@@ -10,10 +10,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 BASE=Path(__file__).resolve().parent
-UPLOAD=BASE/"uploads"; UPLOAD.mkdir(exist_ok=True)
+IS_VERCEL=bool(os.getenv("VERCEL"))
+UPLOAD=Path(os.getenv("UPLOAD_DIR", "/tmp/taskmark/uploads" if IS_VERCEL else str(BASE/"uploads")))
+UPLOAD.mkdir(parents=True, exist_ok=True)
 app=Flask(__name__)
 app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","dev-change-this-secret")
 db_url=os.getenv("DATABASE_URL",f"sqlite:///{BASE/'taskmark.db'}")
+if IS_VERCEL and not os.getenv("DATABASE_URL"):
+    raise RuntimeError("DATABASE_URL must be configured on Vercel. Use a hosted PostgreSQL database; SQLite is for local development only.")
 if db_url.startswith("postgres://"): db_url=db_url.replace("postgres://","postgresql+psycopg://",1)
 elif db_url.startswith("postgresql://"): db_url=db_url.replace("postgresql://","postgresql+psycopg://",1)
 app.config.update(SQLALCHEMY_DATABASE_URI=db_url,SQLALCHEMY_TRACK_MODIFICATIONS=False,
