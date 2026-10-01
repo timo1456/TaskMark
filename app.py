@@ -1,9 +1,23 @@
-import os, re, secrets, hmac
+import hmac
+import os
+import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, send_from_directory, session
+from flask import (
+    Flask,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -25,13 +39,16 @@ app.config.update(SQLALCHEMY_DATABASE_URI=db_url,SQLALCHEMY_TRACK_MODIFICATIONS=
                   UPLOAD_FOLDER=str(UPLOAD))
 db=SQLAlchemy(app); login=LoginManager(app); login.login_view="login"
 
-def utc(): return datetime.now(timezone.utc)
+def utc():
+
+    return datetime.now(timezone.utc)
 def dt(v):
     try:
         x=datetime.fromisoformat(v)
         return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
     except: return None
-def code(): return secrets.token_urlsafe(12).replace("-","").replace("_","")[:12]
+def code():
+    return secrets.token_urlsafe(12).replace("-","").replace("_","")[:12]
 def upload(f,folder="files"):
     if not f or not f.filename:return None
     p=UPLOAD/folder;p.mkdir(parents=True,exist_ok=True)
@@ -39,7 +56,13 @@ def upload(f,folder="files"):
     return f"{folder}/{name}"
 def notify(uid,title,msg,link,kind="general"):
     db.session.add(Notification(user_id=uid,title=title,message=msg,link=link,kind=kind))
-def enrolled(cid,uid): return db.session.query(Enrollment.id).filter_by(course_id=cid,student_id=uid).first() is not None
+def enrolled(cid,uid):
+    return db.session.query(Enrollment.id).filter_by(course_id=cid,student_id=uid).first() is not None
+
+
+# ==============================================================
+# DATABASE MODELS
+# ==============================================================
 
 class User(UserMixin,db.Model):
     id=db.Column(db.Integer,primary_key=True); role=db.Column(db.String(20),nullable=False)
@@ -48,9 +71,12 @@ class User(UserMixin,db.Model):
     password_hash=db.Column(db.String(255),nullable=False); profile_image=db.Column(db.String(255)); theme=db.Column(db.String(10),default="system",nullable=False)
     created_at=db.Column(db.DateTime,default=utc)
     @property
-    def full_name(self): return f"{self.first_name} {self.last_name}"
-    def set_password(self,p): self.password_hash=generate_password_hash(p)
-    def check_password(self,p): return check_password_hash(self.password_hash,p)
+    def full_name(self):
+        return f"{self.first_name} {self.last_name}"
+    def set_password(self,p):
+        self.password_hash=generate_password_hash(p)
+    def check_password(self,p):
+        return check_password_hash(self.password_hash,p)
 
 class ClassGroup(db.Model):
     id=db.Column(db.Integer,primary_key=True); tutor_id=db.Column(db.Integer,db.ForeignKey("user.id"),nullable=False)
@@ -79,7 +105,8 @@ class Assignment(db.Model):
     results_released=db.Column(db.Boolean,default=False,nullable=False); created_at=db.Column(db.DateTime,default=utc)
     course=db.relationship("Course",backref="assignments"); tutor=db.relationship("User",backref="assignments")
     @property
-    def total_marks(self): return round(sum(q.marks for q in self.questions),2)
+    def total_marks(self):
+        return round(sum(q.marks for q in self.questions),2)
     @property
     def state(self):
         if self.status=="draft": return "Draft"
@@ -106,7 +133,8 @@ class Submission(db.Model):
     __table_args__=(db.UniqueConstraint("assignment_id","student_id",name="uq_submission"),)
     assignment=db.relationship("Assignment",backref="submissions"); student=db.relationship("User",backref="submissions")
     @property
-    def score(self): return round(sum(a.awarded_mark or 0 for a in self.answers),2)
+    def score(self):
+        return round(sum(a.awarded_mark or 0 for a in self.answers),2)
     @property
     def percentage(self):
         return round(self.score/self.assignment.total_marks*100,2) if self.assignment.total_marks else 0
@@ -125,8 +153,14 @@ class Notification(db.Model):
     kind=db.Column(db.String(30),default="general"); is_read=db.Column(db.Boolean,default=False,nullable=False); created_at=db.Column(db.DateTime,default=utc)
     user=db.relationship("User",backref="notifications")
 
+
+# ==============================================================
+# AUTHENTICATION & REQUEST HELPERS
+# ==============================================================
+
 @login.user_loader
-def load(uid): return db.session.get(User,int(uid))
+def load(uid):
+    return db.session.get(User,int(uid))
 
 @app.context_processor
 def globals():
@@ -144,8 +178,14 @@ def protect_posts():
 def init():
     if not getattr(app,"_db_ready",False): db.create_all();app._db_ready=True
 
+
+# ==============================================================
+# AUTHENTICATION & DASHBOARD
+# ==============================================================
+
 @app.route("/")
-def index(): return redirect(url_for("dashboard")) if current_user.is_authenticated else render_template("landing.html")
+def index():
+    return redirect(url_for("dashboard")) if current_user.is_authenticated else render_template("landing.html")
 
 @app.route("/register",methods=["GET","POST"])
 def register():
@@ -170,7 +210,8 @@ def login():
 
 @app.route("/logout")
 @login_required
-def logout(): logout_user();return redirect(url_for("index"))
+def logout():
+    logout_user();return redirect(url_for("index"))
 
 @app.route("/dashboard")
 @login_required
@@ -204,6 +245,11 @@ def settings():
             if p:current_user.profile_image=p
             db.session.commit();flash("Settings updated.","success");return redirect(url_for("settings"))
     return render_template("settings.html")
+
+
+# ==============================================================
+# CLASSES & COURSES
+# ==============================================================
 
 @app.route("/class/new",methods=["GET","POST"])
 @login_required
@@ -271,6 +317,11 @@ def remove_student(course_id,student_id):
     e=Enrollment.query.filter_by(course_id=course_id,student_id=student_id).first()
     if e:db.session.delete(e);db.session.commit()
     return redirect(url_for("course",course_id=course_id))
+
+
+# ==============================================================
+# ASSIGNMENTS & QUESTIONS
+# ==============================================================
 
 @app.route("/assignment/new/<int:course_id>",methods=["GET","POST"])
 @login_required
@@ -395,7 +446,12 @@ def release(assignment_id):
     db.session.commit()
     return redirect(url_for("assignment",assignment_id=a.id))
 
-@app.route("/assignment/<int:assignment_id>/mark/<int:student_id>")
+
+# ==============================================================
+# MARKING & RESULTS
+# ==============================================================
+
+@app.route("/assignment//<int:student_id>")
 @login_required
 def mark(assignment_id,student_id):
     a=db.session.get(Assignment,assignment_id)
@@ -404,7 +460,12 @@ def mark(assignment_id,student_id):
     if not s:abort(404)
     return render_template("mark.html",assignment=a,student=s.student,submission=s)
 
-@app.route("/assignment/<int:assignment_id>/mark/<int:student_id>/save",methods=["POST"])
+
+# ==============================================================
+# SUBMISSIONS & ANSWERS
+# ==============================================================
+
+@app.route("/assignment/",methods=["POST"])
 @login_required
 def save_marks(assignment_id,student_id):
     a=db.session.get(Assignment,assignment_id)
@@ -435,7 +496,12 @@ def results():
     subs=Submission.query.filter_by(student_id=current_user.id).join(Assignment).filter(Assignment.results_released.is_(True)).order_by(Submission.submitted_at.desc()).all()
     return render_template("results.html",tutor_view=False,submissions=subs)
 
-@app.route("/notifications")
+
+# ==============================================================
+# NOTIFICATIONS
+# ==============================================================
+
+@app.route("/notifications/")
 @login_required
 def notifications():
     ns=Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).all()
